@@ -1,0 +1,139 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Urlaub-Tool</title>
+  <style>
+    :root{
+      --bg:#0f172a; --card:#111827; --muted:#94a3b8; --fg:#e5e7eb; --acc:#F5C8A7;
+      --radius:16px;
+    }
+    body{margin:0; font:500 16px/1.4 ui-sans-serif,system-ui,Segoe UI,Roboto,Helvetica Neue,Arial,sans-serif; background:linear-gradient(180deg,#1e2a55, #1a2143 40%, #0f172a); color:var(--fg); min-height:100dvh; display:grid; place-items:center; padding:24px;}
+    .card{width:min(720px, 92vw); background:rgba(17,24,39,.6); backdrop-filter: blur(10px);
+      border:1px solid rgba(148,163,184,.2); border-radius:var(--radius); box-shadow:0 20px 60px rgba(0,0,0,.35); padding:24px;}
+    h1{margin:0 0 6px; font-size:22px}
+    p.sub{margin:0 0 16px; color:var(--muted); font-size:14px}
+    form{display:grid; grid-template-columns:1fr 1fr; gap:16px}
+    label{font-size:13px; color:#cbd5e1; display:block; margin:0 0 6px}
+    input[type="date"], input[type="text"], input[type="color"], textarea{
+      width:100%; box-sizing:border-box; padding:12px 12px; border-radius:12px; border:1px solid rgba(148,163,184,.25);
+      background:#0b1220; color:var(--fg); outline:none; font:inherit;
+    }
+    textarea{min-height:86px; resize:vertical; grid-column:1/-1}
+    .row-span{grid-column:1/-1}
+    .hint{font-size:12px; color:#9aa6b2}
+    .actions{display:flex; gap:12px; margin-top:8px}
+    button{
+      padding:12px 16px; border-radius:12px; border:1px solid transparent; cursor:pointer; font:600 14px/1 ui-sans-serif;
+      background:var(--acc); color:#1f2937;
+    }
+    button.secondary{ background:transparent; color:#e5e7eb; border-color:rgba(148,163,184,.35); }
+    .msg{margin-top:12px; font-size:14px}
+    .ok{color:#86efac} .err{color:#fca5a5}
+    .preview{margin-top:10px; background:#0b1220; border:1px dashed rgba(148,163,184,.3); padding:12px; border-radius:12px; font-family:ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace; font-size:13px; color:#cbd5e1}
+    @media (max-width:720px){ form{grid-template-columns:1fr} }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h1>Urlaubs‑Badge konfigurieren</h1>
+    <p class="sub">Einfach Start, Ende & Text eintragen. Auf Wunsch kann die Farbe zusätzlich angepasst werden.</p>
+
+    <form id="vacForm">
+      <div>
+        <label for="start">Startdatum</label>
+        <input id="start" name="start" type="date" required />
+        <div class="hint">Format: YYYY‑MM‑DD</div>
+      </div>
+      <div>
+        <label for="end">Enddatum</label>
+        <input id="end" name="end" type="date" required />
+      </div>
+      <div class="row-span">
+        <label for="text">Text</label>
+        <textarea id="text" name="text" placeholder="Wir sind im Urlaub von … bis …"></textarea>
+      </div>
+      <div>
+        <label for="color">Farbe</label>
+        <input id="color" name="color" type="color" value="#F5C8A7" />
+        <div class="hint">optional – Standard #F5C8A7</div>
+      </div>
+      <div class="row-span actions">
+        <button type="submit">Speichern</button>
+        <button type="button" class="secondary" id="loadBtn">Aus Repo laden</button>
+      </div>
+      <div class="row-span preview" id="preview"></div>
+      <div class="row-span msg" id="msg"></div>
+    </form>
+  </div>
+
+  <script>
+    // <<< CONFIG: setze hier die URL zu deiner JSON im Repo >>>
+    const JSON_URL = 'https://raw.githubusercontent.com/DEIN-GITHUB-USER/urlaub-badge/refs/heads/main/vacation.json';
+    const API_ENDPOINT = '/.netlify/functions/update-vacation';
+
+    const f = document.getElementById('vacForm');
+    const msg = document.getElementById('msg');
+    const preview = document.getElementById('preview');
+    const loadBtn = document.getElementById('loadBtn');
+
+    function show(obj){
+      preview.textContent = JSON.stringify(obj, null, 2);
+    }
+    function note(t, ok){
+      msg.textContent = t;
+      msg.className = 'row-span msg ' + (ok ? 'ok' : 'err');
+    }
+    function readForm(){
+      const start = f.start.value.trim();
+      const end   = f.end.value.trim();
+      const text  = f.text.value.trim();
+      const color = f.color.value.trim();
+      const payload = { start, end };
+      if (text)  payload.text = text;
+      if (color) payload.color = color;
+      return payload;
+    }
+
+    f.addEventListener('input', ()=>show(readForm()));
+
+    f.addEventListener('submit', async (e)=>{
+      e.preventDefault();
+      const body = readForm();
+      show(body);
+      try{
+        const r = await fetch(API_ENDPOINT, {
+          method:'POST',
+          headers:{'Content-Type':'application/json'},
+          body: JSON.stringify({ jsonUrl: JSON_URL, data: body })
+        });
+        if(!r.ok){ throw new Error('HTTP '+r.status); }
+        const out = await r.json();
+        note('Gespeichert ✓ Commit: ' + (out.commitSha||'ok'), true);
+      }catch(err){
+        note('Fehler beim Speichern: ' + err.message, false);
+      }
+    });
+
+    loadBtn.addEventListener('click', async ()=>{
+      try{
+        const r = await fetch(JSON_URL + '?cb=' + Date.now());
+        if(!r.ok) throw new Error('HTTP '+r.status);
+        const j = await r.json();
+        f.start.value = j.start || '';
+        f.end.value   = j.end   || '';
+        f.text.value  = j.text  || '';
+        f.color.value = j.color || '#F5C8A7';
+        show(readForm());
+        note('Aus Repo geladen ✓', true);
+      }catch(err){
+        note('Konnte nicht laden: ' + err.message, false);
+      }
+    });
+
+    // Initial Preview
+    show(readForm());
+  </script>
+</body>
+</html>
