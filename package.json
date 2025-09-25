@@ -1,0 +1,11 @@
+{
+  "name": "urlaub-badge",
+  "private": true,
+  "version": "1.0.0",
+  "dependencies": {
+    "octokit": "^4.0.2"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
