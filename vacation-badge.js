@@ -1,10 +1,5 @@
 (function(){
-  // 🧹 Alte Dismiss-Flags IMMER entfernen (Kompatibilität mit früheren Versionen)
-  try {
-    localStorage.removeItem('vacation-badge-dismissed-until');
-    sessionStorage.removeItem('vacation-badge-dismissed');
-  } catch(e) {}
-
+  // --- Utility ------------------------------------------------------------
   function cssOnce(id, text){
     if (document.getElementById(id)) return;
     var s = document.createElement('style');
@@ -13,7 +8,7 @@
   function parseISO(d){ var a=(d||"").split("-").map(Number); return a.length===3?new Date(a[0],a[1]-1,a[2],0,0,0,0):null; }
   function fmtD(d){ var m=["Jän","Feb","Mär","Apr","Mai","Jun","Jul","Aug","Sep","Okt","Nov","Dez"]; return d.getDate()+". "+m[d.getMonth()]+" "+d.getFullYear(); }
 
-  // Styles
+  // --- Styles -------------------------------------------------------------
   cssOnce('vacation-badge-css', `
     :root { --vac-bg:#F5C8A7; --vac-fg:#2b2b2b; }
     .vacation-badge{
@@ -36,8 +31,12 @@
     }
   `);
 
-  // ⚙️ KEIN Storage mehr – Close schließt nur visuell für diese Seite
-  function makeBadge(text, color){
+  // --- State: pro-URL "geschlossen"-Status (nur im Speicher, nicht persistent) ----
+  var closedForUrl = null;
+  function currentUrlKey(){ return location.pathname + location.search; }
+
+  // --- Build badge --------------------------------------------------------
+  function buildBadge(text, color){
     if (color) document.documentElement.style.setProperty('--vac-bg', color);
     var div = document.createElement('div');
     div.className = 'vacation-badge';
@@ -47,40 +46,95 @@
     div.querySelector('.vacation-badge__text').textContent = text;
 
     div.querySelector('.vacation-badge__close').addEventListener('click', function(){
-      div.remove(); // kein Merken ⇒ erscheint beim nächsten Seitenaufruf wieder
+      // nur für die aktuelle "Seite" (URL) schließen; auf neuer URL wieder zeigen
+      closedForUrl = currentUrlKey();
+      div.remove();
     });
 
     return div;
   }
 
-  function init(scriptEl){
-    var cfgUrl = scriptEl.getAttribute('data-config');
-    if (!cfgUrl) return;
+  // --- Mount/Unmount Logic -----------------------------------------------
+  var cfgCache = null;   // merke geladene Config, um nicht ständig neu zu fetchen
+  var activeFlag = false;
 
-    // Cachebuster stündlich, damit JSON-Updates zügig live werden
+  function isActivePeriod(cfg){
+    var start = parseISO(cfg.start), end = parseISO(cfg.end);
+    if (!start || !end || isNaN(start) || isNaN(end) || start > end) return false;
+    var now = new Date();
+    var tillEndOfDay = new Date(end.getFullYear(),end.getMonth(),end.getDate(),23,59,59,999);
+    return now >= start && now <= tillEndOfDay;
+  }
+
+  function mountIfNeeded(){
+    // wenn für diese URL geschlossen → nicht sofort remounten
+    if (closedForUrl === currentUrlKey()) return;
+
+    var cfg = cfgCache;
+    if (!cfg) return;
+
+    if (!isActivePeriod(cfg)) return;
+
+    // falls schon vorhanden, nix tun
+    if (document.querySelector('.vacation-badge')) return;
+
+    var text = (cfg.text && String(cfg.text).trim()) || ('Wir sind im Urlaub von '+fmtD(parseISO(cfg.start))+' bis '+fmtD(parseISO(cfg.end))+'.');
+    var badge = buildBadge(text, cfg.color);
+    document.body.appendChild(badge);
+    badge.style.display = 'block';
+  }
+
+  function fetchConfig(scriptEl){
+    var cfgUrl = scriptEl.getAttribute('data-config');
+    if (!cfgUrl) return Promise.resolve(null);
+
+    // Cachebuster stündlich, damit JSON-Änderungen zügig live werden
     var url = new URL(cfgUrl, location.href);
     url.searchParams.set('cb', new Date().toISOString().slice(0,13));
 
-    fetch(url.toString(), { credentials:'omit' })
+    return fetch(url.toString(), { credentials:'omit' })
       .then(function(r){ if(!r.ok) throw new Error(r.status); return r.json(); })
-      .then(function(cfg){
-        var start = parseISO(cfg.start), end = parseISO(cfg.end);
-        if (!start || !end || isNaN(start) || isNaN(end) || start > end) return;
-        var now = new Date();
-        // während des Zeitraums anzeigen (inkl. ganzer Endtag)
-        var active = now >= start && now <= new Date(end.getFullYear(),end.getMonth(),end.getDate(),23,59,59,999);
-        if (!active) return;
-
-        var text = (cfg.text && String(cfg.text).trim()) || ('Wir sind im Urlaub von '+fmtD(start)+' bis '+fmtD(end)+'.');
-        var badge = makeBadge(text, cfg.color);
-        if (!badge) return;
-        document.body.appendChild(badge);
-        badge.style.display = 'block';
-      })
-      .catch(function(e){ /* optional: console.warn('vacation-badge', e); */});
+      .then(function(cfg){ cfgCache = cfg; return cfg; });
   }
 
-  // Finde <script src="...vacation-badge.js" data-config="...">
+  // --- SPA-awareness: auf URL-Wechsel remounten --------------------------
+  function hookHistory(){
+    var _ps = history.pushState, _rs = history.replaceState;
+    function onChange(){
+      // bei URL-Wechsel darf wieder gemountet werden
+      closedForUrl = null;
+      // kleines Timeout, bis DOM der „neuen Seite“ steht
+      setTimeout(mountIfNeeded, 60);
+    }
+    history.pushState = function(){ var r=_ps.apply(this, arguments); onChange(); return r; };
+    history.replaceState = function(){ var r=_rs.apply(this, arguments); onChange(); return r; };
+    window.addEventListener('popstate', onChange);
+  }
+
+  // Fallback: MutationObserver – falls ein Theme ohne History-Hooks arbeitet
+  var mo = null;
+  function observeDom(){
+    try {
+      if (mo) mo.disconnect();
+      mo = new MutationObserver(function(){
+        // wenn Badge fehlt und nicht absichtlich für diese URL geschlossen → mount
+        if (!document.querySelector('.vacation-badge')) mountIfNeeded();
+      });
+      mo.observe(document.body, { childList:true, subtree:true });
+    } catch(e){}
+  }
+
+  // --- Init ---------------------------------------------------------------
   var current = document.currentScript;
-  if (current) init(current);
+  if (!current) return;
+
+  hookHistory();
+  observeDom();
+
+  fetchConfig(current).then(function(){
+    mountIfNeeded();
+  }).catch(function(){ /* ignore */ });
+
+  // sicherheitshalber auch bei pageshow (Back/Forward Cache) erneut versuchen
+  window.addEventListener('pageshow', function(){ closedForUrl = null; mountIfNeeded(); });
 })();
