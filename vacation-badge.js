@@ -1,6 +1,6 @@
-<script>
 (function(){
-   try {
+  // 🧹 Alte Dismiss-Flags IMMER entfernen (Kompatibilität mit früheren Versionen)
+  try {
     localStorage.removeItem('vacation-badge-dismissed-until');
     sessionStorage.removeItem('vacation-badge-dismissed');
   } catch(e) {}
@@ -13,6 +13,7 @@
   function parseISO(d){ var a=(d||"").split("-").map(Number); return a.length===3?new Date(a[0],a[1]-1,a[2],0,0,0,0):null; }
   function fmtD(d){ var m=["Jän","Feb","Mär","Apr","Mai","Jun","Jul","Aug","Sep","Okt","Nov","Dez"]; return d.getDate()+". "+m[d.getMonth()]+" "+d.getFullYear(); }
 
+  // Styles
   cssOnce('vacation-badge-css', `
     :root { --vac-bg:#F5C8A7; --vac-fg:#2b2b2b; }
     .vacation-badge{
@@ -35,7 +36,7 @@
     }
   `);
 
-  // ✨ Neu: keine Speicherung mehr – Schließen entfernt nur das Element
+  // ⚙️ KEIN Storage mehr – Close schließt nur visuell für diese Seite
   function makeBadge(text, color){
     if (color) document.documentElement.style.setProperty('--vac-bg', color);
     var div = document.createElement('div');
@@ -46,7 +47,7 @@
     div.querySelector('.vacation-badge__text').textContent = text;
 
     div.querySelector('.vacation-badge__close').addEventListener('click', function(){
-      div.remove(); // kein local/sessionStorage → erscheint beim Reload wieder
+      div.remove(); // kein Merken ⇒ erscheint beim nächsten Seitenaufruf wieder
     });
 
     return div;
@@ -56,6 +57,7 @@
     var cfgUrl = scriptEl.getAttribute('data-config');
     if (!cfgUrl) return;
 
+    // Cachebuster stündlich, damit JSON-Updates zügig live werden
     var url = new URL(cfgUrl, location.href);
     url.searchParams.set('cb', new Date().toISOString().slice(0,13));
 
@@ -65,6 +67,7 @@
         var start = parseISO(cfg.start), end = parseISO(cfg.end);
         if (!start || !end || isNaN(start) || isNaN(end) || start > end) return;
         var now = new Date();
+        // während des Zeitraums anzeigen (inkl. ganzer Endtag)
         var active = now >= start && now <= new Date(end.getFullYear(),end.getMonth(),end.getDate(),23,59,59,999);
         if (!active) return;
 
@@ -77,7 +80,7 @@
       .catch(function(e){ /* optional: console.warn('vacation-badge', e); */});
   }
 
+  // Finde <script src="...vacation-badge.js" data-config="...">
   var current = document.currentScript;
   if (current) init(current);
 })();
-</script>
