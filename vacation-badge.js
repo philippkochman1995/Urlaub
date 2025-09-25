@@ -1,19 +1,13 @@
+<script>
 (function(){
   function cssOnce(id, text){
     if (document.getElementById(id)) return;
     var s = document.createElement('style');
     s.id = id; s.textContent = text; document.head.appendChild(s);
   }
-  function parseISO(d){ // "YYYY-MM-DD" -> lokales Date (00:00)
-    var a = (d||"").split("-").map(Number);
-    return a.length===3 ? new Date(a[0], a[1]-1, a[2], 0,0,0,0) : null;
-  }
-  function fmtD(d){
-    var m = ["Jän","Feb","Mär","Apr","Mai","Jun","Jul","Aug","Sep","Okt","Nov","Dez"];
-    return d.getDate()+". "+m[d.getMonth()]+" "+d.getFullYear();
-  }
+  function parseISO(d){ var a=(d||"").split("-").map(Number); return a.length===3?new Date(a[0],a[1]-1,a[2],0,0,0,0):null; }
+  function fmtD(d){ var m=["Jän","Feb","Mär","Apr","Mai","Jun","Jul","Aug","Sep","Okt","Nov","Dez"]; return d.getDate()+". "+m[d.getMonth()]+" "+d.getFullYear(); }
 
-  // Styles
   cssOnce('vacation-badge-css', `
     :root { --vac-bg:#F5C8A7; --vac-fg:#2b2b2b; }
     .vacation-badge{
@@ -36,6 +30,7 @@
     }
   `);
 
+  // ✨ Neu: keine Speicherung mehr – Schließen entfernt nur das Element
   function makeBadge(text, color){
     if (color) document.documentElement.style.setProperty('--vac-bg', color);
     var div = document.createElement('div');
@@ -44,15 +39,11 @@
     div.setAttribute('aria-live','polite');
     div.innerHTML = '<span class="vacation-badge__text"></span><button class="vacation-badge__close" aria-label="Hinweis schließen"></button>';
     div.querySelector('.vacation-badge__text').textContent = text;
-    var KEY = 'vacation-badge-dismissed-until';
-    var endDismiss = localStorage.getItem(KEY);
-    if (endDismiss && Date.now() < parseInt(endDismiss,10)) return null;
+
     div.querySelector('.vacation-badge__close').addEventListener('click', function(){
-      // bis Mitternacht unterdrücken
-      var now = new Date(), midnight = new Date(now.getFullYear(), now.getMonth(), now.getDate()+1, 0,0,0,0);
-      localStorage.setItem(KEY, String(midnight.getTime()));
-      div.remove();
+      div.remove(); // kein local/sessionStorage → erscheint beim Reload wieder
     });
+
     return div;
   }
 
@@ -60,7 +51,6 @@
     var cfgUrl = scriptEl.getAttribute('data-config');
     if (!cfgUrl) return;
 
-    // stündlicher Cachebuster, damit GitHub/Raw-Cache nicht „klebt“
     var url = new URL(cfgUrl, location.href);
     url.searchParams.set('cb', new Date().toISOString().slice(0,13));
 
@@ -70,7 +60,6 @@
         var start = parseISO(cfg.start), end = parseISO(cfg.end);
         if (!start || !end || isNaN(start) || isNaN(end) || start > end) return;
         var now = new Date();
-        // während des Zeitraums anzeigen (inkl. ganzer Endtag)
         var active = now >= start && now <= new Date(end.getFullYear(),end.getMonth(),end.getDate(),23,59,59,999);
         if (!active) return;
 
@@ -83,7 +72,7 @@
       .catch(function(e){ /* optional: console.warn('vacation-badge', e); */});
   }
 
-  // Finde <script src="...vacation-badge.js" data-config="...">
   var current = document.currentScript;
   if (current) init(current);
 })();
+</script>
