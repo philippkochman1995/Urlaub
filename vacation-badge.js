@@ -1,5 +1,10 @@
 <script>
 (function(){
+   try {
+    localStorage.removeItem('vacation-badge-dismissed-until');
+    sessionStorage.removeItem('vacation-badge-dismissed');
+  } catch(e) {}
+
   function cssOnce(id, text){
     if (document.getElementById(id)) return;
     var s = document.createElement('style');
